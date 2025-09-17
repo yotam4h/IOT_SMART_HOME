@@ -1,0 +1,11 @@
+{
+  "Food_capacity_g": 500,
+  "Water_capacity_ml": 1000,
+  "Portion_max_g": 50,
+  "Food_min_percent": 20,
+  "Water_min_percent": 20,
+  "Food_tray_capacity_g": 150,
+  "Water_tray_capacity_ml": 400,
+  "Food_tray_min_percent": 20,
+  "Water_tray_min_percent": 20
+}

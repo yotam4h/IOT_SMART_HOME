@@ -1,0 +1,8 @@
+paho-mqtt>=1.6.1
+pandas>=2.0.0
+PyQt5>=5.15.9
+pyqtgraph>=0.13.3
+matplotlib>=3.7.1
+scipy>=1.10.0
+sounddevice>=0.4.6
+soundfile>=0.12.1
