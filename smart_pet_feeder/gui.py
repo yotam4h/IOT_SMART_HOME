@@ -2,6 +2,7 @@ import os
 #from sqlite3.dbapi2 import Date
 import sys
 import random
+import re
 # pip install pyqt5-tools
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
@@ -24,7 +25,7 @@ from .config import logs_dir
 logger = logging.getLogger(__name__)  
 
 # set log level
-logger.setLevel(logging.WARNING)
+logger.setLevel(logging.INFO)
 
 # define file handler and set formatter
 file_handler = logging.FileHandler(str(logs_dir / 'gui.log'))
@@ -108,18 +109,30 @@ class MC(MqttClient):
                 except Exception:
                     grams = m_decode
                 self.mainwin.recentDock.add_dispense(f"{da.timestamp()} - {grams}")
-            if 'feeder' in topic:
-                try:
-                    if 'Status:' in m_decode:
-                        status_txt = m_decode.split('Status:')[1].strip()
-                        self.last_relay_status = status_txt
-                        # relayDock may not exist yet at very early connect
-                        try:
-                            self.mainwin.relayDock.update_status(status_txt)
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
+            try:
+                text = m_decode.strip()
+                status_txt = None
+                topic_match = isinstance(topic, str) and 'feeder' in topic.lower()
+                if text:
+                    match = re.search(r'status\s*[:=]\s*([^\r\n]+)', text, re.IGNORECASE)
+                    if match:
+                        status_txt = match.group(1).strip()
+                    elif text.upper() in ('ON', 'OFF'):
+                        status_txt = text
+                    elif 'RELAY' in text.upper() and any(word in text.upper() for word in (' ON', ' OFF', 'UNKNOWN')):
+                        # handle payloads like "Relay ON" or "Relay OFF"
+                        relay_words = re.findall(r'(ON|OFF|UNKNOWN)', text, flags=re.IGNORECASE)
+                        if relay_words:
+                            status_txt = relay_words[-1]
+                if status_txt and (topic_match or 'STATUS' in text.upper() or 'RELAY' in text.upper()):
+                    self.last_relay_status = status_txt
+                    # relayDock may not exist yet at very early connect
+                    try:
+                        self.mainwin.relayDock.update_status(status_txt)
+                    except Exception:
+                        pass
+            except Exception:
+                logger.exception('Failed to process relay status message')
             if 'alarm' in topic:            
                 self.mainwin.statusDock.update_mess_win(da.timestamp()+': ' + m_decode)
             
@@ -499,7 +512,7 @@ class RelayDock(QDockWidget):
 
     def update_status(self, text: str):
         payload = text or 'UNKNOWN'
-        logger.debug('RelayDock update_status request: %s', payload)
+        logger.info('RelayDock update_status request: %s', payload)
         if QThread.currentThread() != self.thread():
             try:
                 QMetaObject.invokeMethod(
@@ -516,7 +529,7 @@ class RelayDock(QDockWidget):
     @pyqtSlot(str)
     def _apply_status(self, text: str):
         payload = text or 'UNKNOWN'
-        logger.debug('RelayDock applying status: %s', payload)
+        logger.info('RelayDock applying status: %s', payload)
         self.status.setText(payload)
         upper = payload.upper()
         if 'ON' in upper:

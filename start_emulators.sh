@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Allow callers to slow down startup when shared brokers rate-limit connects.
+LAUNCH_GAP="${SMARTPETFEEDER_LAUNCH_GAP:-8}"
+GUI_LAUNCH_DELAY="${SMARTPETFEEDER_GUI_DELAY:-10}"
+
+launch_service() {
+  local delay="$1"
+  shift
+  echo "Starting: $*" >&2
+  "$@" &
+  PIDS+=($!)
+  sleep "$delay"
+}
+
 # Launch producers and actuators, then manager and GUI.
 # Requires: Python 3 with dependencies from requirements.txt
 
@@ -27,36 +40,23 @@ PIDS=()
 
 # Env sensor emulators removed for a focused Pet Feeder demo
 # Start FoodLevel emulator (publishes Level: X% to pr/PetFeeder/${FOOD_PLACE}/pub)
-python3 -m smart_pet_feeder.tank_tray_emulator "$FOOD_NAME" "$FOOD_UNITS" "$FOOD_PLACE" "$FOOD_RATE" &
-PIDS+=($!)
-sleep 1
+launch_service "$LAUNCH_GAP" python3 -m smart_pet_feeder.tank_tray_emulator "$FOOD_NAME" "$FOOD_UNITS" "$FOOD_PLACE" "$FOOD_RATE"
 # Start WaterLevel emulator (publishes Level: X% to pr/PetFeeder/${WATER_PLACE}/pub)
-python3 -m smart_pet_feeder.tank_tray_emulator "$WATER_NAME" "$WATER_UNITS" "$WATER_PLACE" "$WATER_RATE" &
-PIDS+=($!)
-sleep 1
-python3 -m smart_pet_feeder.tank_tray_emulator "$FOOD_TRAY_NAME" "$FOOD_TRAY_UNITS" "$FOOD_TRAY_PLACE" "$FOOD_TRAY_RATE" &
-PIDS+=($!)
-sleep 1
-python3 -m smart_pet_feeder.tank_tray_emulator "$WATER_TRAY_NAME" "$WATER_TRAY_UNITS" "$WATER_TRAY_PLACE" "$WATER_TRAY_RATE" &
-PIDS+=($!)
-sleep 1
+launch_service "$LAUNCH_GAP" python3 -m smart_pet_feeder.tank_tray_emulator "$WATER_NAME" "$WATER_UNITS" "$WATER_PLACE" "$WATER_RATE"
+launch_service "$LAUNCH_GAP" python3 -m smart_pet_feeder.tank_tray_emulator "$FOOD_TRAY_NAME" "$FOOD_TRAY_UNITS" "$FOOD_TRAY_PLACE" "$FOOD_TRAY_RATE"
+launch_service "$LAUNCH_GAP" python3 -m smart_pet_feeder.tank_tray_emulator "$WATER_TRAY_NAME" "$WATER_TRAY_UNITS" "$WATER_TRAY_PLACE" "$WATER_TRAY_RATE"
 
 # Actuator device emulator (feeder)
 # Subscribes to pr/PetFeeder/${FEEDER_DEVICE}/sub; publishes status to /pubsmar
-python3 -m smart_pet_feeder.feeder_emulator "$FEEDER_DEVICE" &
-PIDS+=($!)
-sleep 1
+launch_service "$LAUNCH_GAP" python3 -m smart_pet_feeder.feeder_emulator "$FEEDER_DEVICE"
 
 # Relay is handled within the feeder emulator/UI; no separate process needed
 
 # Manager and GUI
 # Manager subscribes to pr/PetFeeder/#, writes to SQLite, emits alarms
-python3 -m smart_pet_feeder.manager &
-PIDS+=($!)
-sleep 3
-# GUI subscribes to updates and lets you send commands
-python3 -m smart_pet_feeder.app_gui &
-PIDS+=($!)
+launch_service "$GUI_LAUNCH_DELAY" python3 -m smart_pet_feeder.manager
+# GUI subscribes to updates and lets you send commands (start a bit later)
+launch_service "$GUI_LAUNCH_DELAY" python3 -m smart_pet_feeder.app_gui
 
 cleanup() {
   echo "Stopping Smart Pet Feeder processes..."
